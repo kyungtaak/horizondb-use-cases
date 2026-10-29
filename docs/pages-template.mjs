@@ -36,8 +36,7 @@ body{background:var(--cp-bg);font-family:"Segoe UI",Aptos,Calibri,-apple-system,
   <p class="case-description">${escape(useCase.description)}</p>
   <ul class="case-tags" aria-label="${escape(useCase.title)} 활용 기능">${useCase.capabilities.map(capability => `<li>${escape(capability)}</li>`).join('')}</ul>
   <div class="case-links">
-    <a class="site-button primary" href="${escape(useCase.documentation)}" aria-label="${escape(useCase.title)} 기술 설명">기술 설명</a>
-    <a class="site-button" href="${escape(useCase.presentation)}" aria-label="${escape(useCase.title)} 발표자료">발표자료</a>
+    <a class="site-button primary" href="${escape(useCase.presentation)}" aria-label="${escape(useCase.title)} Presentation">Presentation</a>
   </div>
 </article>`).join('')
 
@@ -55,7 +54,7 @@ body{background:var(--cp-bg);font-family:"Segoe UI",Aptos,Calibri,-apple-system,
   <h1>업무 질문으로 살펴보는 HorizonDB 활용 사례</h1>
   <p class="site-lead">관계형 데이터와 PostgreSQL 확장, AI 기능을 함께 사용하는 방법을 살펴봅니다. 사례를 선택해 업무 질문부터 SQL·모델 처리 과정과 확인 결과까지 읽어볼 수 있습니다.</p>
   <section id="use-cases" aria-labelledby="use-cases-heading">
-    <div class="site-section-heading"><h2 id="use-cases-heading">활용 사례</h2><p>기술 설명과 발표자료는 이 사이트에서 확인합니다.</p></div>
+    <div class="site-section-heading"><h2 id="use-cases-heading">활용 사례</h2><p>각 사례의 Presentation에서 활용 흐름과 구성을 확인합니다.</p></div>
     <div class="case-grid">${cards}</div>
   </section>
   <aside class="site-boundary" aria-labelledby="boundary-heading">

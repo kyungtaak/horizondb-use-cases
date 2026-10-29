@@ -60,7 +60,6 @@ test('landing uses shared cases and directs readers to install their own applica
   for (const useCase of USE_CASES) {
     assert(landing.includes(useCase.title))
     assert(landing.includes(useCase.question))
-    assert(landing.includes(`href="${useCase.documentation}"`))
     assert(landing.includes(`href="${useCase.presentation}"`))
   }
   assert(landing.includes('실제 모델 추론은 연결된 외부 endpoint에서 실행됩니다.'))
@@ -70,6 +69,18 @@ test('landing uses shared cases and directs readers to install their own applica
   assert(landing.includes('/blob/main/README.md#로컬-실행'))
   assert(!/\b(?:fetch|XMLHttpRequest|EventSource|WebSocket)\s*\(/.test(landing))
   assert(!landing.includes('/api/'))
+})
+
+test('case cards expose only one primary Presentation link', () => {
+  const cards = [...pages.get('index.html').matchAll(/<article class="case-card"[\s\S]*?<\/article>/g)].map(match => match[0])
+  assert.equal(cards.length, USE_CASES.length)
+  for (const [index, useCase] of USE_CASES.entries()) {
+    const links = attributes(cards[index]).filter(([, attribute]) => attribute === 'href')
+    assert.deepEqual(links.map(([, , href]) => href), [useCase.presentation])
+    assert(cards[index].includes(`class="site-button primary" href="${useCase.presentation}" aria-label="${useCase.title} Presentation">Presentation</a>`))
+    assert(!cards[index].includes('기술 설명'))
+    assert(pages.has(useCase.documentation), 'Existing technical document must be preserved')
+  }
 })
 
 test('published documents do not expose an operational demo endpoint', () => {
