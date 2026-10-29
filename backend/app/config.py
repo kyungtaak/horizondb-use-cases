@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     database_connect_timeout_seconds: float = Field(default=10, ge=1, le=60)
     azure_openai_endpoint: str = ""
     azure_openai_key: str | None = Field(default=None, repr=False)
+    model_registry_auth_type: Literal["subscription-key", "managed-identity"] = "subscription-key"
     azure_openai_deployment: str = "gpt-5.4"
     azure_embed_deployment: str = "text-embedding-3-small"
     azure_api_version: str = "2025-03-01-preview"
@@ -35,6 +36,14 @@ class Settings(BaseSettings):
     embedding_provider: Literal["azure_openai", "horizondb"] = "azure_openai"
     chat_model_alias: str = Field(default="horizonship-chat", min_length=1)
     model_timeout_seconds: int = Field(default=45, ge=1, le=100)
+    commerce_enabled: bool = False
+    commerce_classifier_alias: str = "horizonshop-classifier"
+    commerce_classifier_deployment: str = "gpt-5.4-nano"
+    commerce_briefing_alias: str = "horizonshop-briefing"
+    commerce_briefing_deployment: str = "gpt-5.4-mini"
+    commerce_model_endpoint: str | None = None
+    commerce_model_auth_type: Literal["subscription-key", "managed-identity"] | None = None
+    commerce_model_key: str | None = Field(default=None, repr=False)
     search_timezone: str = "Asia/Seoul"
     capture_query_plan: bool = False
     embedding_batch_size: int = Field(default=20, ge=1, le=100)

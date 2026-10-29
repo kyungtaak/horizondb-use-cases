@@ -6,11 +6,15 @@ param(
     [ValidateSet('Check', 'Register', 'WhatIf', 'Deploy')]
     [string] $Mode = 'Check',
     [ValidatePattern('^[a-zA-Z0-9_-]{1,80}$')]
-    [string] $ResourceGroupName = 'rg-horizonship-dev-wus3',
+    [string] $ResourceGroupName = 'rg-horizon-ship-krc',
     [ValidatePattern('^[a-z][a-z0-9-]{1,14}[a-z0-9]$')]
     [string] $NamePrefix = 'horizonship',
     [ValidateSet('GlobalStandard', 'DataZoneStandard')]
     [string] $ModelSku = 'GlobalStandard',
+    [ValidatePattern('^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$')]
+    [string] $ChatModelName = 'gpt-5.4',
+    [ValidateNotNullOrEmpty()]
+    [string] $ChatModelVersion = '2026-03-05',
     [ValidateRange(1, 1000000)]
     [int] $ChatCapacity = 10,
     [ValidateRange(1, 1000000)]
@@ -22,7 +26,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$location = 'westus3'
+$location = 'koreacentral'
 $subscription = if ($PSBoundParameters.ContainsKey('SubscriptionId')) { $SubscriptionId.ToString() } else { $null }
 
 function Invoke-AzureJson {
@@ -90,7 +94,7 @@ $baseUrl = "https://management.azure.com/subscriptions/$subscription/providers/M
 $models = @(Get-AzureList "$baseUrl/models?api-version=2026-03-01")
 $usages = @(Get-AzureList "$baseUrl/usages?api-version=2026-03-01")
 $requirements = @(
-    @{ Name = 'gpt-5.4'; Version = '2026-03-05'; Capacity = $ChatCapacity },
+    @{ Name = $ChatModelName; Version = $ChatModelVersion; Capacity = $ChatCapacity },
     @{ Name = 'text-embedding-3-small'; Version = '1'; Capacity = $EmbeddingCapacity }
 )
 foreach ($requirement in $requirements) {
@@ -114,7 +118,8 @@ if ($Mode -eq 'Check') {
 & az bicep version --only-show-errors | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'Install Bicep with az bicep install first.' }
 if ($Mode -eq 'Deploy') {
-    Write-Host 'This creates or updates billable Foundry resources and two model deployments. API key authentication stays disabled (Entra ID required).'
+    Write-Host 'This creates or updates billable Foundry resources and two model deployments.'
+    Write-Host 'API key authentication stays disabled (Entra ID required).'
     Write-Host 'HorizonDB is not changed. Existing resources are not automatically deleted on failure.'
     $approval = Read-Host "Type the resource group name '$ResourceGroupName' to deploy"
     if ($approval -cne $ResourceGroupName) { throw 'Deployment canceled.' }
@@ -130,6 +135,8 @@ $settings = @{
     location = $location
     namePrefix = $NamePrefix
     modelSku = $ModelSku
+    chatModelName = $ChatModelName
+    chatModelVersion = $ChatModelVersion
     chatCapacity = $ChatCapacity
     embeddingCapacity = $EmbeddingCapacity
     modelCallerPrincipalId = $principalId

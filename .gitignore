@@ -20,6 +20,7 @@ backend/.venv/
 .vite/
 frontend/node_modules/
 frontend/dist/
+_site/
 
 # Editors and operating systems
 .vscode/

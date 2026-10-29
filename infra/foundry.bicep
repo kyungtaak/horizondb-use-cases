@@ -1,7 +1,7 @@
 targetScope = 'resourceGroup'
 
-@allowed(['westus3'])
-param location string = 'westus3'
+@allowed(['koreacentral'])
+param location string = 'koreacentral'
 
 @minLength(3)
 @maxLength(16)
@@ -9,6 +9,12 @@ param namePrefix string = 'horizonship'
 
 @allowed(['GlobalStandard', 'DataZoneStandard'])
 param modelSku string = 'GlobalStandard'
+
+@minLength(1)
+param chatModelName string = 'gpt-5.4'
+
+@minLength(1)
+param chatModelVersion string = '2026-03-05'
 
 @minValue(1)
 param chatCapacity int = 10
@@ -62,7 +68,7 @@ resource modelCallerAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' 
 
 resource chat 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
   parent: foundry
-  name: 'gpt-5.4'
+  name: chatModelName
   sku: {
     name: modelSku
     capacity: chatCapacity
@@ -70,8 +76,8 @@ resource chat 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
   properties: {
     model: {
       format: 'OpenAI'
-      name: 'gpt-5.4'
-      version: '2026-03-05'
+      name: chatModelName
+      version: chatModelVersion
     }
     versionUpgradeOption: 'NoAutoUpgrade'
   }

@@ -33,14 +33,21 @@ $body = @{
     }
 } | ConvertTo-Json -Depth 10 -Compress
 
-& az rest `
-    --method patch `
-    --url "${clusterUrl}?api-version=2026-05-01-preview" `
-    --body $body `
-    --only-show-errors `
-    --output none
-if ($LASTEXITCODE -ne 0) {
-    throw 'The new HorizonDB cluster was created, but its parameter group could not be attached.'
+$bodyFile = [System.IO.Path]::GetTempFileName()
+try {
+    [System.IO.File]::WriteAllText($bodyFile, $body)
+    & az rest `
+        --method patch `
+        --url "${clusterUrl}?api-version=2026-05-01-preview" `
+        --headers 'Content-Type=application/json' `
+        --body "@$bodyFile" `
+        --only-show-errors `
+        --output none
+    if ($LASTEXITCODE -ne 0) {
+        throw 'The new HorizonDB cluster was created, but its parameter group could not be attached.'
+    }
+} finally {
+    Remove-Item -LiteralPath $bodyFile
 }
 
 $clusterId = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.HorizonDb/clusters/$clusterName"
@@ -48,7 +55,7 @@ $clusterId = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/p
     --subscription $subscriptionId `
     --ids $clusterId `
     --api-version '2026-05-01-preview' `
-    --custom "properties.parameterGroup.id == '$parameterGroupId' && properties.parameterGroup.status == 'InSync'" `
+    --custom "properties.parameterGroup.id == '$parameterGroupId' && properties.parameterGroup.syncStatus == 'InSync'" `
     --interval 15 `
     --timeout 900 `
     --only-show-errors

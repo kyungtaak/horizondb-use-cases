@@ -8,6 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from app.agent import AgentClient, ShipmentAgent
+from app.commerce.routes import CommerceRuntime
+from app.commerce.routes import router as commerce_router
 from app.config import Settings, get_settings
 from app.models import (
     ChatResponse,
@@ -69,10 +71,15 @@ def create_app(
             active_repository,
             client=agent_client,
         )
-        yield
-
-        if postgres_repository is not None:
-            await postgres_repository.close()
+        commerce = CommerceRuntime(resolved_settings)
+        app.state.commerce = commerce
+        try:
+            await commerce.open()
+            yield
+        finally:
+            await commerce.close()
+            if postgres_repository is not None:
+                await postgres_repository.close()
 
     app = FastAPI(
         title=resolved_settings.app_name,
@@ -89,6 +96,7 @@ def create_app(
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["Content-Type"],
     )
+    app.include_router(commerce_router)
 
     @app.get("/api/health", response_model=DatabaseCapabilities)
     async def health(

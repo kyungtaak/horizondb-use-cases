@@ -37,14 +37,18 @@ Get-Command az -ErrorAction Stop | Out-Null
 Get-Command azd -ErrorAction Stop | Out-Null
 
 $subscriptionId = Get-AzdValue -Name 'AZURE_SUBSCRIPTION_ID' -Required
-$location = (Get-AzdValue -Name 'AZURE_LOCATION' -Default 'westus3').ToLowerInvariant()
+$location = (Get-AzdValue -Name 'AZURE_LOCATION' -Default 'koreacentral').ToLowerInvariant()
 $mode = (Get-AzdValue -Name 'HORIZONDB_MODE' -Default 'existing').ToLowerInvariant()
+$authMode = (Get-AzdValue -Name 'AZURE_OPENAI_AUTH_MODE' -Default 'key').ToLowerInvariant()
 
-if ($location -ne 'westus3') {
-    throw 'This deployment currently supports AZURE_LOCATION=westus3 only.'
+if ($location -ne 'koreacentral') {
+    throw 'This deployment currently supports AZURE_LOCATION=koreacentral only.'
 }
 if ($mode -notin @('create', 'existing')) {
     throw 'HORIZONDB_MODE must be create or existing.'
+}
+if ($authMode -notin @('key', 'entra')) {
+    throw 'AZURE_OPENAI_AUTH_MODE must be key or entra.'
 }
 
 foreach ($namespace in @(
@@ -85,7 +89,24 @@ if (
 ) {
     throw 'AZURE_OPENAI_ENDPOINT must be an HTTPS resource endpoint without credentials.'
 }
-Get-AzdValue -Name 'AZURE_OPENAI_KEY' -Required | Out-Null
+if ($authMode -eq 'key') {
+    Get-AzdValue -Name 'AZURE_OPENAI_KEY' -Required | Out-Null
+} else {
+    $accountName = Get-AzdValue -Name 'AZURE_OPENAI_ACCOUNT_NAME' -Required
+    $applicationResourceGroup = Get-AzdValue -Name 'AZURE_RESOURCE_GROUP' -Required
+    $modelAccount = Invoke-AzureJson @(
+        'cognitiveservices', 'account', 'show',
+        '--subscription', $subscriptionId,
+        '--resource-group', $applicationResourceGroup,
+        '--name', $accountName
+    )
+    if ($modelAccount.location -ne $location) {
+        throw "The AI account $accountName must be in $location."
+    }
+    if ($mode -ne 'create') {
+        throw 'Entra deployment currently requires create mode so the database model-access identity is managed by this environment.'
+    }
+}
 
 if ($mode -eq 'existing') {
     $applicationResourceGroup = Get-AzdValue -Name 'AZURE_RESOURCE_GROUP' -Required
@@ -103,6 +124,9 @@ if ($mode -eq 'existing') {
     )
     if ($cluster.properties.state -ne 'Succeeded') {
         throw "Existing HorizonDB cluster $clusterName is not ready. State: $($cluster.properties.state)"
+    }
+    if ($cluster.location -ne $location) {
+        throw "Existing HorizonDB cluster $clusterName must be in $location."
     }
 } else {
     $previousResourceGroup = Get-AzdValue -Name 'HORIZONDB_RESOURCE_GROUP'
@@ -137,4 +161,4 @@ if ($allowAzureServices -eq 'true') {
     Write-Warning 'HorizonDB will accept connections from Azure service public IP addresses for this demo environment.'
 }
 
-Write-Host "Preprovision passed: mode=$mode; location=$location; model deployments are not created."
+Write-Host "Preprovision passed: mode=$mode; location=$location; auth=$authMode; model deployments are not created."

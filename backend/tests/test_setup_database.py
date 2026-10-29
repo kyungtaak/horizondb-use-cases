@@ -144,6 +144,39 @@ def test_pipeline_model_registration_requires_subscription_key(
         configure_pipeline_model(MagicMock(), settings)
 
 
+@pytest.mark.parametrize("api_key", [None, "unused-test-key"])
+def test_pipeline_model_registration_supports_managed_identity(
+    live_settings: Settings, api_key: str | None,
+) -> None:
+    settings = live_settings.model_copy(update={
+        "azure_openai_key": api_key,
+        "model_registry_auth_type": "managed-identity",
+    })
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = None
+
+    configure_pipeline_model(connection, settings)
+
+    statement, parameters = cursor.execute.call_args.args
+    assert "model_registry.model_add" in statement
+    assert parameters == (
+        settings.embedding_model_alias,
+        "https://example.openai.azure.com/",
+        settings.azure_embed_deployment,
+        settings.azure_embed_deployment,
+        "managed-identity",
+        None,
+    )
+    cursor.execute.reset_mock()
+    cursor.fetchone.return_value = parameters[:-1]
+
+    configure_pipeline_model(connection, settings)
+
+    assert cursor.execute.call_count == 1
+    assert "model_key_update" not in cursor.execute.call_args.args[0]
+
+
 def test_chat_alias_registration_and_key_rotation(live_settings):
     connection = MagicMock()
     cursor = connection.cursor.return_value.__enter__.return_value

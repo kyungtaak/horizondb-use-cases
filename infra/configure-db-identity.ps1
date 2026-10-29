@@ -6,7 +6,7 @@ param(
     [ValidateSet('Check', 'WhatIf', 'Deploy')]
     [string] $Mode = 'Check',
     [ValidatePattern('^[a-zA-Z0-9_-]{1,80}$')]
-    [string] $ResourceGroupName = 'rg-horizonship-dev-wus3',
+    [string] $ResourceGroupName = 'rg-horizon-ship-krc',
     [ValidatePattern('^[a-zA-Z0-9][-a-zA-Z0-9]{0,61}[a-zA-Z0-9]$')]
     [string] $ClusterName = 'horizonship-db-example',
     [ValidatePattern('^[a-zA-Z0-9_-]+$')]

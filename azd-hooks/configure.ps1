@@ -10,7 +10,7 @@ param(
     [ValidateSet('create', 'existing')]
     [string] $HorizonDbMode = 'existing',
     [ValidatePattern('^[a-zA-Z0-9_-]{1,80}$')]
-    [string] $ResourceGroupName = "rg-horizonship-$EnvironmentName-wus3",
+    [string] $ResourceGroupName = "rg-horizonship-$EnvironmentName-krc",
     [ValidatePattern('^[a-z][a-z0-9-]{1,14}[a-z0-9]$')]
     [string] $NamePrefix = 'horizonship',
     [ValidatePattern('^[a-zA-Z][a-zA-Z0-9]{0,62}$')]
@@ -18,6 +18,9 @@ param(
     [string] $DatabaseName = 'postgres',
     [Parameter(Mandatory)]
     [string] $OpenAiEndpoint,
+    [ValidateSet('key', 'entra')]
+    [string] $OpenAiAuthentication = 'key',
+    [string] $OpenAiAccountName = '',
     [string] $ChatDeployment = 'gpt-5.4',
     [string] $EmbeddingDeployment = 'text-embedding-3-small',
     [string] $ExistingHorizonDbResourceGroup = '',
@@ -30,6 +33,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Get-Command azd -ErrorAction Stop | Out-Null
+
+if ($OpenAiAuthentication -eq 'entra' -and [string]::IsNullOrWhiteSpace($OpenAiAccountName)) {
+    throw 'Entra mode requires -OpenAiAccountName for the AI account in the application resource group.'
+}
 
 if (
     $HorizonDbMode -eq 'existing' `
@@ -47,7 +54,7 @@ if ($environmentExists) {
 } else {
     & azd env new $EnvironmentName `
         --subscription $SubscriptionId.ToString() `
-        --location westus3 `
+        --location koreacentral `
         --no-prompt | Out-Null
 }
 if ($LASTEXITCODE -ne 0) {
@@ -66,7 +73,7 @@ $reuseCreatedCluster = (
 
 $values = [ordered]@{
     AZURE_SUBSCRIPTION_ID = $SubscriptionId.ToString()
-    AZURE_LOCATION = 'westus3'
+    AZURE_LOCATION = 'koreacentral'
     AZURE_RESOURCE_GROUP = $ResourceGroupName
     AZURE_NAME_PREFIX = $NamePrefix
     HORIZONDB_MODE = $HorizonDbMode
@@ -84,6 +91,8 @@ $values = [ordered]@{
     AZURE_PG_NAME = $DatabaseName
     AZURE_PG_USER = $AdministratorLogin
     AZURE_OPENAI_ENDPOINT = $OpenAiEndpoint
+    AZURE_OPENAI_AUTH_MODE = $OpenAiAuthentication
+    AZURE_OPENAI_ACCOUNT_NAME = $OpenAiAccountName
     AZURE_OPENAI_DEPLOYMENT = $ChatDeployment
     AZURE_EMBED_DEPLOYMENT = $EmbeddingDeployment
     CHAT_PROVIDER = 'azure_openai'
@@ -101,19 +110,23 @@ foreach ($entry in $values.GetEnumerator()) {
 }
 
 $databasePassword = Read-Host 'HorizonDB administrator password' -AsSecureString
-$openAiKey = Read-Host 'Azure OpenAI subscription key' -AsSecureString
+$openAiKey = if ($OpenAiAuthentication -eq 'key') {
+    Read-Host 'Azure OpenAI subscription key' -AsSecureString
+} else { $null }
 $databasePasswordPointer = [IntPtr]::Zero
 $openAiKeyPointer = [IntPtr]::Zero
 try {
     $databasePasswordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($databasePassword)
-    $openAiKeyPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($openAiKey)
     $databasePasswordText = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($databasePasswordPointer)
-    $openAiKeyText = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($openAiKeyPointer)
 
     & azd env set AZURE_PG_PASSWORD $databasePasswordText | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Could not store AZURE_PG_PASSWORD.' }
-    & azd env set AZURE_OPENAI_KEY $openAiKeyText | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Could not store AZURE_OPENAI_KEY.' }
+    if ($null -ne $openAiKey) {
+        $openAiKeyPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($openAiKey)
+        $openAiKeyText = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($openAiKeyPointer)
+        & azd env set AZURE_OPENAI_KEY $openAiKeyText | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Could not store AZURE_OPENAI_KEY.' }
+    }
 } finally {
     if ($databasePasswordPointer -ne [IntPtr]::Zero) {
         [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($databasePasswordPointer)
@@ -122,7 +135,7 @@ try {
         [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($openAiKeyPointer)
     }
     $databasePassword.Dispose()
-    $openAiKey.Dispose()
+    if ($null -ne $openAiKey) { $openAiKey.Dispose() }
     Remove-Variable databasePasswordText, openAiKeyText -ErrorAction SilentlyContinue
 }
 

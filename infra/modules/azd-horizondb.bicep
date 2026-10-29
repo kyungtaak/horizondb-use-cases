@@ -1,6 +1,6 @@
 targetScope = 'resourceGroup'
 
-@allowed(['westus3'])
+@allowed(['koreacentral'])
 param location string
 
 @minLength(3)
@@ -31,6 +31,8 @@ param zonePlacementPolicy string = 'BestEffort'
 
 param tags object
 
+param modelAccessIdentityResourceId string = ''
+
 var suffix = uniqueString(resourceGroup().id, namePrefix)
 
 resource parameterGroup 'Microsoft.HorizonDb/parameterGroups@2026-05-01-preview' = {
@@ -54,6 +56,12 @@ resource cluster 'Microsoft.HorizonDb/clusters@2026-05-01-preview' = {
   name: '${namePrefix}-db-${suffix}'
   location: location
   tags: tags
+  identity: empty(modelAccessIdentityResourceId) ? null : {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${modelAccessIdentityResourceId}': {}
+    }
+  }
   properties: {
     createMode: clusterCreateMode
     version: '17'

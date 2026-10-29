@@ -245,7 +245,8 @@ def configure_pipeline_model(
 def configure_model(
     connection: psycopg.Connection[Any], settings: Settings, alias: str, deployment: str,
 ) -> None:
-    if not settings.azure_openai_key:
+    uses_key = settings.model_registry_auth_type == "subscription-key"
+    if uses_key and not settings.azure_openai_key:
         raise RuntimeError(
             "AZURE_OPENAI_KEY is required to register the HorizonDB pipeline model"
         )
@@ -255,7 +256,7 @@ def configure_model(
         model_registry_endpoint(settings.azure_openai_endpoint),
         deployment,
         deployment,
-        "subscription-key",
+        settings.model_registry_auth_type,
     )
     with connection.cursor() as cursor:
         cursor.execute(
@@ -280,7 +281,7 @@ SELECT model_registry.model_add(
     p_endpoint_key => %s
 );
 """,
-                (*expected, settings.azure_openai_key),
+                (*expected, settings.azure_openai_key if uses_key else None),
             )
             return
         if tuple(current) != expected:
@@ -288,10 +289,11 @@ SELECT model_registry.model_add(
                 f"Model alias {alias!r} is registered "
                 "with different nonsecret metadata"
             )
-        cursor.execute(
-            "SELECT model_registry.model_key_update(%s, %s);",
-            (alias, settings.azure_openai_key),
-        )
+        if uses_key:
+            cursor.execute(
+                "SELECT model_registry.model_key_update(%s, %s);",
+                (alias, settings.azure_openai_key),
+            )
 
 
 def configure_chat_model(connection: psycopg.Connection[Any], settings: Settings) -> None:

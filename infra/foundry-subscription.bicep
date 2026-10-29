@@ -2,9 +2,11 @@ targetScope = 'subscription'
 
 type DeploymentSettings = {
   resourceGroupName: string
-  location: 'westus3'
+  location: 'koreacentral'
   namePrefix: string
   modelSku: 'GlobalStandard' | 'DataZoneStandard'
+  chatModelName: string
+  chatModelVersion: string
   chatCapacity: int
   embeddingCapacity: int
   modelCallerPrincipalId: string
@@ -28,6 +30,8 @@ module resources './foundry.bicep' = {
     location: settings.location
     namePrefix: settings.namePrefix
     modelSku: settings.modelSku
+    chatModelName: settings.chatModelName
+    chatModelVersion: settings.chatModelVersion
     chatCapacity: settings.chatCapacity
     embeddingCapacity: settings.embeddingCapacity
     modelCallerPrincipalId: settings.modelCallerPrincipalId

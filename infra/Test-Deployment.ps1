@@ -34,7 +34,7 @@ function az {
     $payload = switch -Regex ($command) {
         '^identity (list|show|create)' {
             $managedIdentity = @{
-                id = "/subscriptions/$testSubscription/resourceGroups/rg-horizonship-dev-wus3/providers/Microsoft.ManagedIdentity/userAssignedIdentities/horizonship-db-example-model-access"
+                id = "/subscriptions/$testSubscription/resourceGroups/rg-horizon-ship-krc/providers/Microsoft.ManagedIdentity/userAssignedIdentities/horizonship-db-example-model-access"
                 name = 'horizonship-db-example-model-access'
                 principalId = '22222222-2222-2222-2222-222222222222'
                 clientId = '33333333-3333-3333-3333-333333333333'
@@ -51,12 +51,12 @@ function az {
             if ($global:HorizonShipDeploymentTestState.IdentityPatched) {
                 $identity = $global:HorizonShipDeploymentTestState.PatchedIdentity
             } elseif ($global:HorizonShipDeploymentTestState.Scenario -in @('identity-existing', 'identity-user-assigned', 'identity-multiple')) {
-                $identity = @{ type = 'UserAssigned'; userAssignedIdentities = @{ "/subscriptions/$testSubscription/resourceGroups/rg-horizonship-dev-wus3/providers/Microsoft.ManagedIdentity/userAssignedIdentities/existing" = @{ clientId = 'keep' } } }
+                $identity = @{ type = 'UserAssigned'; userAssignedIdentities = @{ "/subscriptions/$testSubscription/resourceGroups/rg-horizon-ship-krc/providers/Microsoft.ManagedIdentity/userAssignedIdentities/existing" = @{ clientId = 'keep' } } }
                 if ($global:HorizonShipDeploymentTestState.Scenario -in @('identity-user-assigned', 'identity-multiple')) {
-                    $identity.userAssignedIdentities["/subscriptions/$testSubscription/resourceGroups/rg-horizonship-dev-wus3/providers/Microsoft.ManagedIdentity/userAssignedIdentities/other"] = @{}
+                    $identity.userAssignedIdentities["/subscriptions/$testSubscription/resourceGroups/rg-horizon-ship-krc/providers/Microsoft.ManagedIdentity/userAssignedIdentities/other"] = @{}
                 }
             }
-            @{ identity = $identity; location = 'westus3'; properties = @{ state = 'Succeeded' } }
+            @{ identity = $identity; location = 'koreacentral'; properties = @{ state = 'Succeeded' } }
             break
         }
         '^rest --method patch ' {
@@ -101,7 +101,11 @@ function az {
             $namespace = $arguments[[array]::IndexOf($arguments, '--namespace') + 1]
             @{
                 registrationState = $(if ($global:HorizonShipDeploymentTestState.RegisteredProviders.Contains($namespace)) { 'Registered' } else { $state })
-                resourceTypes = @(@{ resourceType = 'clusters'; locations = @('West US 3'); apiVersions = @('2026-05-01-preview') })
+                resourceTypes = @(@{
+                    resourceType = 'clusters'
+                    locations = $(if ($global:HorizonShipDeploymentTestState.Scenario -eq 'wrong-region') { @('West US 3') } else { @('Korea Central') })
+                    apiVersions = @('2026-05-01-preview')
+                })
             }
             break
         }
@@ -130,6 +134,7 @@ function az {
                 $modelValues = if ($global:HorizonShipDeploymentTestState.Scenario -eq 'missing-model') { @() } else {
                     @(
                         @{ model = @{ name = 'gpt-5.4'; version = '2026-03-05'; skus = @(@{ name = 'GlobalStandard' }) } },
+                        @{ model = @{ name = 'gpt-5.4-mini'; version = '2026-03-17'; skus = @(@{ name = 'GlobalStandard' }) } },
                         @{ model = @{ name = 'text-embedding-3-small'; version = '1'; skus = @(@{ name = 'GlobalStandard' }) } }
                     )
                 }
@@ -142,6 +147,7 @@ function az {
             @{
                 value = @(
                     @{ name = @{ value = 'OpenAI.GlobalStandard.gpt-5.4' }; limit = $quotaLimit; currentValue = 0 },
+                    @{ name = @{ value = 'OpenAI.GlobalStandard.gpt-5.4-mini' }; limit = 1000; currentValue = 0 },
                     @{ name = @{ value = 'OpenAI.GlobalStandard.text-embedding-3-small' }; limit = 3000; currentValue = 0 }
                 )
             }
@@ -152,16 +158,21 @@ function az {
             if ($global:HorizonShipDeploymentTestState.Scenario -eq 'whatif-fails') { Set-Variable LASTEXITCODE -Value 1 -Scope 1 }
             if ($command -match 'foundry.bicepparam') {
                 $settings = $env:HORIZONSHIP_FOUNDRY_SETTINGS | ConvertFrom-Json
-                if ($settings.location -ne 'westus3' -or $settings.PSObject.Properties['clientIpAddress'] -or
+                if ($settings.location -ne 'koreacentral' -or $settings.PSObject.Properties['clientIpAddress'] -or
                     $settings.PSObject.Properties['administratorLogin'] -or $command -notmatch '--name horizonship-foundry') {
                     throw 'Foundry deployment must not include database settings.'
+                }
+                $expectedModel = if ($global:HorizonShipDeploymentTestState.Scenario -eq 'alternate-model') { 'gpt-5.4-mini' } else { 'gpt-5.4' }
+                $expectedVersion = if ($global:HorizonShipDeploymentTestState.Scenario -eq 'alternate-model') { '2026-03-17' } else { '2026-03-05' }
+                if ($settings.chatModelName -ne $expectedModel -or $settings.chatModelVersion -ne $expectedVersion) {
+                    throw 'The selected chat model and version were not passed to Bicep.'
                 }
                 @{}
                 break
             }
             if (-not $env:HORIZONSHIP_ADMIN_PASSWORD) { throw 'Password was not supplied to Bicep.' }
             $settings = $env:HORIZONSHIP_DEPLOYMENT_SETTINGS | ConvertFrom-Json
-            if ($settings.location -ne 'westus3' -or $settings.clientIpAddress -ne '8.8.8.8') {
+            if ($settings.location -ne 'koreacentral' -or $settings.clientIpAddress -ne '8.8.8.8') {
                 throw 'Unexpected deployment settings.'
             }
             @{}
@@ -202,7 +213,7 @@ function Read-Host {
         if ($global:HorizonShipDeploymentTestState.Scenario -eq 'deploy-enter') { return '' }
         return 'DEPLOY'
     }
-    return 'rg-horizonship-dev-wus3'
+    return 'rg-horizon-ship-krc'
 }
 
 function Test-Scenario {
@@ -219,7 +230,13 @@ function Test-Scenario {
     try {
         $invokeParameters = @{ Mode = $Mode }
         $script = $deploymentScript
-        if ($Foundry) { $script = Join-Path $PSScriptRoot 'deploy-foundry.ps1' }
+        if ($Foundry) {
+            $script = Join-Path $PSScriptRoot 'deploy-foundry.ps1'
+            if ($Name -eq 'alternate-model') {
+                $invokeParameters.ChatModelName = 'gpt-5.4-mini'
+                $invokeParameters.ChatModelVersion = '2026-03-17'
+            }
+        }
         else { $invokeParameters.ClientIpAddress = $IpAddress }
         if (-not $UseCurrentSubscription) { $invokeParameters.SubscriptionId = $testSubscription }
         & $script @invokeParameters 6>$null | Out-Null
@@ -275,7 +292,7 @@ function Test-IdentityScenario {
     try {
         $parameters = @{ Mode = $Mode }
         if ($Name -eq 'identity-user-assigned') {
-            $parameters.IdentityResourceId = "/subscriptions/$testSubscription/resourceGroups/rg-horizonship-dev-wus3/providers/Microsoft.ManagedIdentity/userAssignedIdentities/selected"
+            $parameters.IdentityResourceId = "/subscriptions/$testSubscription/resourceGroups/rg-horizon-ship-krc/providers/Microsoft.ManagedIdentity/userAssignedIdentities/selected"
         }
         & (Join-Path $PSScriptRoot 'configure-db-identity.ps1') @parameters 6>$null | Out-Null
     } catch { $failure = $_.Exception.Message }
@@ -304,7 +321,7 @@ function Test-CompiledTemplates {
         $env:HORIZONSHIP_ADMIN_PASSWORD = 'Not-A-Real-Password-9aA!'
         $env:HORIZONSHIP_DEPLOYMENT_SETTINGS = @{
             resourceGroupName = 'rg-horizonship-test'
-            location = 'westus3'
+            location = 'koreacentral'
             namePrefix = 'horizonship'
             administratorLogin = 'horizonadmin'
             clientIpAddress = '8.8.8.8'
@@ -315,9 +332,11 @@ function Test-CompiledTemplates {
         } | ConvertTo-Json -Compress
         $env:HORIZONSHIP_FOUNDRY_SETTINGS = @{
             resourceGroupName = 'rg-horizonship-test'
-            location = 'westus3'
+            location = 'koreacentral'
             namePrefix = 'horizonship'
             modelSku = 'GlobalStandard'
+            chatModelName = 'gpt-5.4-mini'
+            chatModelVersion = '2026-03-17'
             chatCapacity = 10
             embeddingCapacity = 10
             modelCallerPrincipalId = $testSubscription
@@ -329,6 +348,9 @@ function Test-CompiledTemplates {
             $compiled = $output | Out-String | ConvertFrom-Json
             $template = $compiled.templateJson | ConvertFrom-Json -AsHashtable
             $parameters = $compiled.parametersJson | ConvertFrom-Json -AsHashtable
+            if ($parameters.parameters.settings.value.location -ne 'koreacentral') {
+                throw 'Deployment settings must use Korea Central.'
+            }
             $module = @($template.resources.Values | Where-Object type -eq 'Microsoft.Resources/deployments')[0]
             if ($module.properties.mode -ne 'Incremental') { throw 'Service deployments must use Incremental mode.' }
             $resources = $module.properties.template.resources
@@ -348,6 +370,10 @@ function Test-CompiledTemplates {
                     $parameters.parameters.ContainsKey('administratorPassword')) { throw 'Foundry template depends on database resources.' }
                 $account = @($resources | Where-Object type -eq 'Microsoft.CognitiveServices/accounts')[0]
                 if ($account.properties.disableLocalAuth -ne $true) { throw 'Foundry must disable API key authentication.' }
+                $chat = @($resources | Where-Object { $_.type -eq 'Microsoft.CognitiveServices/accounts/deployments' -and $_.name -match 'chatModelName' })
+                if ($chat.Count -ne 1 -or $chat[0].properties.model.version -ne "[parameters('chatModelVersion')]") {
+                    throw 'Foundry must deploy the selected chat model and version.'
+                }
                 if (@($resources | Where-Object type -eq 'Microsoft.CognitiveServices/accounts/deployments').Count -ne 2) {
                     throw 'Expected two model deployments.'
                 }
@@ -357,11 +383,135 @@ function Test-CompiledTemplates {
             }
             Write-Output "PASS offline compilation and resource isolation: $file"
         }
+        $azdOutput = & $azureCli bicep build --file (Join-Path $PSScriptRoot 'azd-main.bicep') --stdout --only-show-errors
+        if ($LASTEXITCODE -ne 0) { throw 'Offline azd Bicep compilation failed.' }
+        $azdTemplate = $azdOutput | Out-String | ConvertFrom-Json -AsHashtable
+        if ($azdTemplate.parameters.location.defaultValue -ne 'koreacentral' -or
+            $azdTemplate.parameters.location.allowedValues.Count -ne 1 -or
+            $azdTemplate.parameters.location.allowedValues[0] -ne 'koreacentral') {
+            throw 'The azd template must default to Korea Central and reject other regions.'
+        }
+        if ($azdTemplate.parameters.openAiAuthMode.defaultValue -ne 'key' -or
+            'entra' -notin $azdTemplate.parameters.openAiAuthMode.allowedValues -or
+            $azdTemplate.parameters.openAiKey.defaultValue -ne '') {
+            throw 'Entra mode must allow deployment without a model subscription key.'
+        }
+        Write-Output 'PASS offline compilation and Korea Central region restriction: azd-main.bicep'
     } finally {
         $env:HORIZONSHIP_DEPLOYMENT_SETTINGS = $oldSettings
         $env:HORIZONSHIP_FOUNDRY_SETTINGS = $oldFoundrySettings
         $env:HORIZONSHIP_ADMIN_PASSWORD = $oldPassword
     }
+}
+
+function Test-AzdPreprovision {
+    param(
+        [string] $Location = 'koreacentral',
+        [string] $ClusterLocation = 'koreacentral',
+        [string] $AuthMode = 'key',
+        [switch] $OmitKey,
+        [string] $ExpectedError = ''
+    )
+
+    $values = @{
+        AZURE_SUBSCRIPTION_ID = $testSubscription
+        AZURE_LOCATION = $Location
+        HORIZONDB_MODE = 'existing'
+        AZURE_RESOURCE_GROUP = 'rg-horizon-ship-krc'
+        HORIZONDB_RESOURCE_GROUP = 'rg-existing-db-krc'
+        HORIZONDB_CLUSTER_NAME = 'test-db'
+        AZURE_PG_PASSWORD = 'Local-test-Password!9'
+        AZURE_OPENAI_ENDPOINT = 'https://test.openai.azure.com/'
+        AZURE_OPENAI_KEY = 'local-test-key'
+        AZURE_OPENAI_AUTH_MODE = $AuthMode
+        AZURE_OPENAI_ACCOUNT_NAME = 'test-ai'
+        ALLOW_AZURE_SERVICES_TO_HORIZONDB = 'true'
+    }
+    if ($OmitKey) { $values.Remove('AZURE_OPENAI_KEY') }
+    if ($AuthMode -eq 'entra') {
+        $values.HORIZONDB_MODE = 'create'
+        $values.HORIZONDB_RESOURCE_GROUP = ''
+        $values.HORIZONDB_CLUSTER_NAME = ''
+    }
+    function azd {
+        if ($args[0] -eq 'env' -and $args[1] -eq 'set' -and $args[2] -eq 'HORIZONDB_CREATE_MODE') {
+            Set-Variable LASTEXITCODE -Value 0 -Scope 1
+            return
+        }
+        if ($args[0] -ne 'env' -or $args[1] -ne 'get-value') {
+            throw 'Unexpected azd command during preprovision test.'
+        }
+        if (-not $values.ContainsKey($args[2])) {
+            Set-Variable LASTEXITCODE -Value 1 -Scope 1
+            return ''
+        }
+        Set-Variable LASTEXITCODE -Value 0 -Scope 1
+        return $values[$args[2]]
+    }
+    function az {
+        Set-Variable LASTEXITCODE -Value 0 -Scope 1
+        if ($args[0] -eq 'provider' -and $args[1] -eq 'show') { return 'Registered' }
+        if ($args[0] -eq 'resource' -and $args[1] -eq 'show') {
+            return (@{ location = $ClusterLocation; properties = @{ state = 'Succeeded' } } | ConvertTo-Json -Compress)
+        }
+        if ($args[0] -eq 'cognitiveservices' -and $args[1] -eq 'account' -and $args[2] -eq 'show') {
+            return (@{ location = 'koreacentral' } | ConvertTo-Json -Compress)
+        }
+        throw 'Unexpected Azure command during preprovision test.'
+    }
+    $failure = $null
+    try { & (Join-Path $PSScriptRoot '..\azd-hooks\preprovision.ps1') 6>$null }
+    catch { $failure = $_.Exception.Message }
+    if ($ExpectedError) {
+        if (-not $failure -or $failure -notlike "*$ExpectedError*") { throw "Expected '$ExpectedError', got '$failure'." }
+    } elseif ($failure) { throw "Korea Central preprovision failed: $failure" }
+    Write-Output "PASS azd preprovision location=$Location; cluster=$ClusterLocation; auth=$AuthMode"
+}
+
+function Test-AzdPostprovision {
+    $values = @{
+        HORIZONDB_MODE = 'create'
+        AZURE_SUBSCRIPTION_ID = $testSubscription
+        HORIZONDB_RESOURCE_GROUP = 'rg-horizon-ship-krc'
+        HORIZONDB_CLUSTER_NAME = 'test-db'
+        HORIZONDB_PARAMETER_GROUP_ID = "/subscriptions/$testSubscription/resourceGroups/rg-horizon-ship-krc/providers/Microsoft.HorizonDb/parameterGroups/test-params"
+    }
+    $state = @{ BodyFile = $null; Patches = 0; Waits = 0 }
+    function azd {
+        Set-Variable LASTEXITCODE -Value 0 -Scope 1
+        return $values[$args[2]]
+    }
+    function az {
+        $arguments = @($args)
+        Set-Variable LASTEXITCODE -Value 0 -Scope 1
+        if ($arguments[0] -eq 'rest') {
+            $headersIndex = [array]::IndexOf($arguments, '--headers')
+            if ($headersIndex -lt 0 -or $arguments[$headersIndex + 1] -ne 'Content-Type=application/json') {
+                throw 'The parameter group PATCH must explicitly use application/json.'
+            }
+            $body = $arguments[[array]::IndexOf($arguments, '--body') + 1]
+            if (-not $body.StartsWith('@')) { throw 'The PATCH must use a body file to preserve JSON quoting on Windows.' }
+            $state.BodyFile = $body.Substring(1)
+            $payload = Get-Content -LiteralPath $state.BodyFile -Raw | ConvertFrom-Json
+            if ($payload.properties.parameterGroup.id -ne $values.HORIZONDB_PARAMETER_GROUP_ID -or
+                $payload.properties.parameterGroup.applyImmediately -ne $true) {
+                throw 'The requested parameter group was not passed correctly.'
+            }
+            $state.Patches++
+        } elseif ($arguments[0] -eq 'resource' -and $arguments[1] -eq 'wait') {
+            $condition = $arguments[[array]::IndexOf($arguments, '--custom') + 1]
+            if ($condition -notmatch 'properties\.parameterGroup\.syncStatus' -or
+                $condition -notmatch [regex]::Escape($values.HORIZONDB_PARAMETER_GROUP_ID)) {
+                throw 'Wait must check the actual parameter group syncStatus and requested ID.'
+            }
+            $state.Waits++
+        } else { throw 'Unexpected Azure command during postprovision test.' }
+    }
+    & (Join-Path $PSScriptRoot '..\azd-hooks\postprovision.ps1') 6>$null
+    if ($state.Patches -ne 1 -or $state.Waits -ne 1 -or (Test-Path -LiteralPath $state.BodyFile)) {
+        throw 'Postprovision must attach the parameter group, wait for InSync and clean up its body file.'
+    }
+    Write-Output 'PASS Windows-safe parameter group attachment and cleanup'
 }
 
 try {
@@ -373,6 +523,7 @@ try {
     Test-Scenario 'ip-invalid' 'WhatIf' 'Provide -ClientIpAddress' -IpAddress ''
     Test-Scenario 'ip-private' 'WhatIf' 'public egress IPv4' -IpAddress ''
     Test-Scenario 'unregistered' 'Check' 'Registration is incomplete'
+    Test-Scenario 'wrong-region' 'Check' 'HorizonDB Korea Central'
     Test-Scenario 'register' 'Register'
     Test-Scenario 'already-registered' 'Register'
     Test-Scenario 'pending-feature' 'WhatIf'
@@ -393,6 +544,7 @@ try {
     Test-Scenario 'missing-model' 'Check' 'is unavailable' -Foundry
     Test-Scenario 'no-quota' 'Deploy' 'Insufficient unallocated quota' -Foundry
     Test-Scenario 'whatif' 'WhatIf' -Foundry
+    Test-Scenario 'alternate-model' 'WhatIf' -Foundry
     Test-Scenario 'whatif-fails' 'Deploy' 'What-if failed' -Foundry
     Test-Scenario 'cancel' 'Deploy' 'Deployment canceled' -Foundry
     Test-Scenario 'deploy' 'Deploy' -Foundry
@@ -412,6 +564,13 @@ try {
     Test-IdentityScenario 'identity-patch-fails' 'Deploy' 1 0 'Azure CLI failed' 1
     Test-IdentityScenario 'identity-wait-fails' 'Deploy' 1 0 'Azure CLI failed' 1
     Test-IdentityScenario 'identity-whatif-fails' 'Deploy' 1 0 'RBAC what-if failed' 1
+    Test-AzdPreprovision
+    Test-AzdPreprovision -AuthMode 'entra' -OmitKey
+    Test-AzdPreprovision -OmitKey -ExpectedError 'Set AZURE_OPENAI_KEY'
+    Test-AzdPreprovision -AuthMode 'invalid' -ExpectedError 'AZURE_OPENAI_AUTH_MODE must be key or entra'
+    Test-AzdPreprovision -Location 'westus3' -ExpectedError 'AZURE_LOCATION=koreacentral only'
+    Test-AzdPreprovision -ClusterLocation 'westus3' -ExpectedError 'must be in koreacentral'
+    Test-AzdPostprovision
     if ($CompileTemplates) { Test-CompiledTemplates }
     Write-Output 'All deployment tests passed. No Azure resource operations were executed.'
 } finally {

@@ -6,7 +6,7 @@ param(
     [ValidateSet('Check', 'Register', 'WhatIf', 'Deploy')]
     [string] $Mode = 'Check',
     [ValidatePattern('^[a-zA-Z0-9_-]{1,80}$')]
-    [string] $ResourceGroupName = 'rg-horizonship-dev-wus3',
+    [string] $ResourceGroupName = 'rg-horizon-ship-krc',
     [ValidatePattern('^[a-z][a-z0-9-]{1,14}[a-z0-9]$')]
     [string] $NamePrefix = 'horizonship',
     [ValidatePattern('^[a-zA-Z][a-zA-Z0-9]{0,62}$')]
@@ -23,7 +23,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$location = 'westus3'
+$location = 'koreacentral'
 $subscription = if ($PSBoundParameters.ContainsKey('SubscriptionId')) { $SubscriptionId.ToString() } else { $null }
 
 function Invoke-AzureJson {
@@ -77,9 +77,9 @@ $status = @(Get-RegistrationStatus)
 $status | Format-Table | Out-Host
 $provider = Invoke-AzureJson @('provider', 'show', '--namespace', 'Microsoft.HorizonDB')
 $clusterType = @($provider.resourceTypes | Where-Object resourceType -eq 'clusters')
-if ($clusterType.Count -ne 1 -or 'West US 3' -notin $clusterType[0].locations -or
+if ($clusterType.Count -ne 1 -or 'Korea Central' -notin $clusterType[0].locations -or
     '2026-05-01-preview' -notin $clusterType[0].apiVersions) {
-    throw 'HorizonDB West US 3 or the required API version is unavailable.'
+    throw 'HorizonDB Korea Central or the required API version is unavailable.'
 }
 if (@($status | Where-Object State -ne 'Registered').Count -gt 0) {
     throw 'Registration is incomplete. Run with -Mode Register before WhatIf or Deploy.'

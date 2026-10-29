@@ -61,6 +61,9 @@ Set-AzdSecretFromPrompt `
             -and $Value -match '[^a-zA-Z0-9]'
     }
 
-Set-AzdSecretFromPrompt `
-    -Name 'AZURE_OPENAI_KEY' `
-    -Prompt 'Azure OpenAI subscription key'
+$authMode = Get-AzdValue -Name 'AZURE_OPENAI_AUTH_MODE'
+if ($authMode -ne 'entra') {
+    Set-AzdSecretFromPrompt `
+        -Name 'AZURE_OPENAI_KEY' `
+        -Prompt 'Azure OpenAI subscription key'
+}

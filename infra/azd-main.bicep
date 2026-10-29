@@ -5,13 +5,13 @@ targetScope = 'resourceGroup'
 @description('Azure Developer CLI environment name')
 param environmentName string
 
-@allowed(['westus3'])
+@allowed(['koreacentral'])
 @metadata({
   azd: {
     type: 'location'
   }
 })
-param location string = 'westus3'
+param location string = 'koreacentral'
 
 @minLength(3)
 @maxLength(16)
@@ -41,8 +41,12 @@ param databaseName string = 'postgres'
 param openAiEndpoint string
 
 @secure()
-@minLength(1)
-param openAiKey string
+param openAiKey string = ''
+
+@allowed(['key', 'entra'])
+param openAiAuthMode string = 'key'
+
+param openAiAccountName string = ''
 
 param chatDeployment string = 'gpt-5.4'
 param embeddingDeployment string = 'text-embedding-3-small'
@@ -94,6 +98,7 @@ module createdHorizonDb './modules/azd-horizondb.bicep' = if (horizonDbMode == '
     replicaCount: horizonDbReplicaCount
     zonePlacementPolicy: horizonDbZonePlacementPolicy
     tags: tags
+    modelAccessIdentityResourceId: openAiAuthMode == 'entra' ? backendIdentity.id : ''
   }
 }
 
@@ -150,6 +155,20 @@ resource frontendIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023
   name: frontendIdentityName
   location: location
   tags: tags
+}
+
+resource modelAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = {
+  name: openAiAccountName
+}
+
+resource modelCallerAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (openAiAuthMode == 'entra') {
+  name: guid(modelAccount.id, backendIdentity.id, '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  scope: modelAccount
+  properties: {
+    principalId: backendIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  }
 }
 
 var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
@@ -209,23 +228,24 @@ resource backend 'Microsoft.App/containerApps@2025-01-01' = {
           identity: backendIdentity.id
         }
       ]
-      secrets: [
+      secrets: concat([
         {
           name: 'database-password'
           value: administratorPassword
         }
+      ], openAiAuthMode == 'key' ? [
         {
           name: 'openai-key'
           value: openAiKey
         }
-      ]
+      ] : [])
     }
     template: {
       containers: [
         {
           name: 'backend'
           image: placeholderImage
-          env: [
+          env: concat([
             {
               name: 'HOST'
               value: '0.0.0.0'
@@ -267,8 +287,12 @@ resource backend 'Microsoft.App/containerApps@2025-01-01' = {
               value: openAiEndpoint
             }
             {
-              name: 'AZURE_OPENAI_KEY'
-              secretRef: 'openai-key'
+              name: 'AZURE_CLIENT_ID'
+              value: backendIdentity.properties.clientId
+            }
+            {
+              name: 'MODEL_REGISTRY_AUTH_TYPE'
+              value: openAiAuthMode == 'entra' ? 'managed-identity' : 'subscription-key'
             }
             {
               name: 'AZURE_OPENAI_DEPLOYMENT'
@@ -302,7 +326,12 @@ resource backend 'Microsoft.App/containerApps@2025-01-01' = {
               name: 'CORS_ORIGINS'
               value: '["${frontendUri}"]'
             }
-          ]
+          ], openAiAuthMode == 'key' ? [
+            {
+              name: 'AZURE_OPENAI_KEY'
+              secretRef: 'openai-key'
+            }
+          ] : [])
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
@@ -315,7 +344,7 @@ resource backend 'Microsoft.App/containerApps@2025-01-01' = {
       }
     }
   }
-  dependsOn: [backendAcrPull, horizonDbFirewall]
+  dependsOn: [backendAcrPull, horizonDbFirewall, modelCallerAccess]
 }
 
 resource frontend 'Microsoft.App/containerApps@2025-01-01' = {

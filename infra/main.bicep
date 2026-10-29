@@ -1,7 +1,7 @@
 targetScope = 'resourceGroup'
 
-@allowed(['westus3'])
-param location string = 'westus3'
+@allowed(['koreacentral'])
+param location string = 'koreacentral'
 
 @minLength(3)
 @maxLength(16)

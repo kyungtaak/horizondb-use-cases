@@ -2,7 +2,7 @@ targetScope = 'subscription'
 
 type DeploymentSettings = {
   resourceGroupName: string
-  location: 'westus3'
+  location: 'koreacentral'
   namePrefix: string
   administratorLogin: string
   clientIpAddress: string

@@ -1,6 +1,6 @@
 # HorizonShip 인프라 배포
 
-HorizonDB 기본 배포와 Foundry 선택 배포를 별도 스크립트로 제공합니다. 기본 리전은 West US 3입니다.
+HorizonDB 기본 배포와 Foundry 선택 배포를 별도 스크립트로 제공합니다. 모든 배포의 리전은 Korea Central(`koreacentral`)입니다.
 기존 Foundry에 필요한 모델이 있으면 HorizonDB만 배포하고 외부 endpoint를 사용합니다.
 등록 작업은 PowerShell이 처리하고, 리소스 그룹과 서비스는 Bicep으로 배포합니다.
 스크립트의 기본 모드는 조회 전용인 `Check`입니다. 실제 변경은 모드를 명시하고 확인 문구를 입력해야 시작됩니다.
@@ -12,7 +12,7 @@ HorizonDB 기본 배포와 Foundry 선택 배포를 별도 스크립트로 제�
 | [deploy.ps1](deploy.ps1) | HorizonDB만 등록·검사·what-if·승인 후 배포 |
 | [deploy-foundry.ps1](deploy-foundry.ps1) | 선택 실행: Foundry 등록·모델·quota 검사·what-if·승인 후 배포 |
 | [subscription.bicep](subscription.bicep), [main.bicep](main.bicep) | DB용 리소스 그룹, HorizonDB, parameter group, DB 방화벽 |
-| [foundry-subscription.bicep](foundry-subscription.bicep), [foundry.bicep](foundry.bicep) | Foundry용 리소스 그룹, Entra ID 전용 Foundry, 두 모델, 선택적 백엔드 RBAC |
+| [foundry-subscription.bicep](foundry-subscription.bicep), [foundry.bicep](foundry.bicep) | Foundry용 리소스 그룹, 기본 Entra ID 전용 Foundry, 두 모델, 선택적 백엔드 RBAC |
 | [foundry-project.bicep](foundry-project.bicep) | 기존 Foundry 아래 project만 별도 생성 |
 | [../azure.yaml](../azure.yaml), [azd-main.bicep](azd-main.bicep) | 기존 또는 신규 HorizonDB를 선택하는 Container Apps 배포 |
 | [../azd-hooks/configure.ps1](../azd-hooks/configure.ps1) | azd 환경과 비밀 값 대화형 설정 |
@@ -29,7 +29,12 @@ capacity는 모델별 quota 단위이며 요청 건수나 토큰 수 자체가 �
 DB 접속용 비밀번호 인증은 유지합니다. 채팅과 검색어 임베딩은 provider 설정에 따라 backend에서 직접
 API를 호출하거나 HorizonDB의 모델 함수를 호출합니다. 실제 추론은 두 경로 모두 외부 모델에서 실행됩니다.
 배송 데이터 변경 후 벡터를 갱신하는 `azure_ai` pipeline은 DB가 Foundry를 직접 호출하며,
-현재 구성에서는 key 인증이 가능한 외부 Foundry가 필요합니다.
+DB model registry는 기본적으로 subscription key를 사용합니다. 새 azd 환경의 Entra 모드는
+앱과 DB에 같은 User Assigned Managed Identity를 연결하고 `managed-identity` 인증을 선택합니다.
+대상 DB 확장에서 이 인증을 지원해야 하며, 지원되지 않으면 setup이 오류로 중단됩니다.
+2026-10-28 KRC의 `azure_ai 2.5.3`에서는 BYOM Managed Identity 등록이 실제로 거부됐습니다.
+현재 검증된 앱 배포는 별도의 key 인증 가능 리소스를 사용합니다. 같은 그룹에 Foundry Project를
+추가해도 이 DB 런타임 제한은 바뀌지 않습니다.
 
 모델 이름은 백엔드 기본값과 일치합니다. 두 provider 모두 리소스의 모델 endpoint를 사용하므로
 Foundry 전용 배포에는 project를 포함하지 않습니다. 포털에서 모델을 확인하고 테스트할 때는
@@ -39,8 +44,11 @@ Foundry 전용 배포에는 project를 포함하지 않습니다. 포털에서 �
 ## Azure Container Apps 배포
 
 루트의 `azure.yaml`은 앱 호스팅과 선택적 HorizonDB 생성을 한 `azd up` 흐름으로 묶습니다.
-Foundry와 모델 deployment는 이 흐름에서 생성하거나 변경하지 않습니다. 기존 Azure OpenAI endpoint,
-subscription key, `gpt-5.4`, `text-embedding-3-small` deployment가 먼저 준비되어 있어야 합니다.
+Foundry와 모델 deployment는 이 흐름에서 생성하거나 변경하지 않습니다. Azure OpenAI endpoint,
+채팅 모델과 `text-embedding-3-small` deployment가 먼저 준비되어 있어야 합니다.
+기본 key 모드는 subscription key를 요구합니다. `-OpenAiAuthentication entra` 모드는 같은 리소스 그룹의
+AI account 이름을 받아 Managed Identity와 AI account 범위의 모델 호출 RBAC를 배포합니다.
+채팅 모델의 deployment 이름이 기본값 `gpt-5.4`와 다르면 설정 스크립트에 `-ChatDeployment`를 지정합니다.
 
 PowerShell 7.4 이상, Azure CLI, [Azure Developer CLI](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd) 1.15.0 이상이 필요합니다.
 Azure CLI와 azd에 각각 로그인한 뒤 저장소 루트에서 설정 스크립트를 실행합니다.
@@ -51,7 +59,7 @@ azd auth login
 azd version
 ```
 
-현재 hook은 `westus3`만 허용합니다. 대상 구독에 `Microsoft.App`, `Microsoft.ContainerRegistry`,
+현재 hook은 `koreacentral`만 허용하며 기존 HorizonDB도 같은 리전에 있어야 합니다. 대상 구독에 `Microsoft.App`, `Microsoft.ContainerRegistry`,
 `Microsoft.ManagedIdentity`, `Microsoft.HorizonDB`가 등록되어 있어야 하며 hook이 자동 등록하지는 않습니다.
 리소스 배포 외에 앱 Identity의 ACR Pull 역할을 만들 권한도 필요합니다.
 
@@ -59,7 +67,7 @@ azd version
 각 앱의 User Assigned Managed Identity와 ACR Pull 역할입니다. frontend만 public ingress를 사용합니다.
 Nginx가 같은 origin의 `/api` 요청을 내부 backend ingress로 전달합니다.
 설정 스크립트는 두 provider를 `azure_openai`로 저장합니다. `horizondb`로 변경하려면 대상 DB에
-모델 별칭을 먼저 준비해야 하며, 현재 azd 사전 검사는 provider와 관계없이 subscription key를 요구합니다.
+모델 별칭을 먼저 준비해야 합니다. 두 provider 모두 선택한 인증 모드에 맞는 사전 검사를 실행합니다.
 
 ### 기존 HorizonDB 사용
 
@@ -89,7 +97,7 @@ azd up
 `existing`은 기본적으로 `RUN_DATABASE_SETUP=false`입니다. 기존 schema와 데이터, model registry,
 pipeline을 변경하지 않습니다. DB가 아직 초기화되지 않았을 때만 설정 명령에 `-RunDatabaseSetup`을 추가합니다.
 이 옵션은 전체 setup을 실행하므로 기존 샘플 값과 인덱스·pipeline도 갱신합니다. 모델 별칭만 추가할 때는
-[루트 README의 `--models-only` 절차](../README.md#모델-호출-위치-선택)를 사용합니다.
+[기존 Fleet 기술 문서의 `--models-only` 절차](../docs/blog-post.md#모델-호출-위치-선택)를 사용합니다.
 
 ### 새 HorizonDB 생성
 
@@ -141,8 +149,13 @@ Docker Desktop 없이도 ACR remote build를 사용하므로 로컬 Docker daemo
 `EXPLAIN (FORMAT JSON, COSTS TRUE)`로 예상 실행 계획을 수집하며 화면의 실행 내역에서 확인할 수 있습니다.
 운영 환경에서 추가 DB 호출을 원하지 않으면 `azd env set CAPTURE_QUERY_PLAN false` 후 다시 배포합니다.
 
-2026-09-10 구독 조회에서 West US 3의 두 모델과 quota를 확인했습니다.
-West US 2에서는 대상 모델이 목록에 없어 이 스크립트는 West US 3만 허용합니다.
+2026-10-28 대상 구독 조회에서 Korea Central의 HorizonDB와 두 모델을 확인했습니다.
+`gpt-5.4`의 가용 quota가 부족해 실제 KRC 배포에는 `gpt-5.4-mini` 버전 `2026-03-17`을 선택했습니다.
+Foundry 스크립트의 `-ChatModelName`, `-ChatModelVersion`으로 모델을 지정하고, 앱 설정의
+`-ChatDeployment`에도 같은 deployment 이름을 전달합니다.
+이후 BYOM 인증 제한 때문에 앱은 사용자가 제공한 외부 KRC endpoint의 `gpt-5.4`와
+`text-embedding-3-small`을 사용하도록 연결했습니다. 새 그룹의 Foundry와 두 모델은 남아 있지만
+현재 앱의 호출 대상은 아닙니다.
 DB 스크립트는 HorizonDB API 지원만 검사합니다. Foundry 스크립트는 모델의 고정 버전, SKU와 남은 quota를 검사합니다.
 모델 사용 가능 여부와 용량은 바뀔 수 있으며 조회 성공이 실제 생성 성공을 보장하지는 않습니다.
 
@@ -159,10 +172,11 @@ Container Apps용 `azd` 흐름의 임시 Azure 서비스 허용 규칙은 앞의
 
 새 Foundry는 백엔드가 호출할 수 있도록 공용 API 접근을 허용하되,
 `disableLocalAuth: true`로 키 인증을 차단합니다. 모델 호출에는 Entra ID와 RBAC가 필요합니다.
+대상 구독의 MCAPS 정책도 이 값을 강제하므로 key 인증을 켜거나 정책을 우회하지 않습니다.
 인터넷에서 접근 가능한 인증 필수 API이며, DB의 IPv4 방화벽 규칙이 Foundry에도 적용되는 것은 아닙니다.
 Private Endpoint와 사설 DNS가 필요한 운영 환경에는 이 구성을 그대로 사용하지 마세요.
-Global Standard는 추론 처리 위치가 West US 3에 고정되지 않습니다.
-`-ModelSku DataZoneStandard`로 변경할 수 있지만 미국 데이터 영역 내 처리와 단일 리전 처리는 다릅니다.
+Global Standard는 리소스의 위치가 Korea Central이어도 추론 처리 위치가 한국으로 고정되지 않습니다.
+`DataZoneStandard`도 단일 리전 처리와 다르며 선택 전에 해당 리전의 SKU 지원과 quota를 확인해야 합니다.
 
 DB 비밀번호는 터미널의 보안 입력으로 받고 Bicep의 `@secure()` 매개변수로 전달합니다.
 명령행 인수, 매개변수 파일, 배포 출력에 비밀번호를 넣지 않습니다. 실행 중에는 자식 Bicep 프로세스에
@@ -225,7 +239,7 @@ HorizonDB 등록이 안 되어 있으면 조회 결과를 표시한 뒤 오류�
 확인 질문에 `REGISTER`를 입력하면 미등록 Provider만 등록하고 CLI의 `--wait`로 완료를 기다립니다.
 Portal의 구독 > 리소스 공급자에서 등록해도 됩니다. 이미 `Registered`이면 이 단계는 생략합니다.
 
-`publicpreview`와 `westus3` 기능의 별도 등록이 필수라는 근거는 확인되지 않았으므로,
+`publicpreview`와 리전별 preview 기능의 별도 등록이 필수라는 근거는 확인되지 않았으므로,
 스크립트는 이 기능들을 요청하거나 배포 선행 조건으로 검사하지 않습니다.
 이전 스크립트로 요청한 `publicpreview`가 `Pending`이어도 그 상태만으로 중단하지 않습니다.
 기존 기능 요청을 취소하거나 변경하지도 않습니다. 실제 서비스가 추가 승인을 요구하면
@@ -274,7 +288,7 @@ Bicep 컴파일과 Azure what-if 성공은 서비스의 실제 배포 성공이�
 ## Foundry 선택 배포
 
 기존 Foundry의 채팅·임베딩 모델을 사용할 때는 이 단계를 생략합니다. 특히 외부 key 인증 리소스에는
-이 템플릿을 적용하지 않습니다. 템플릿은 `disableLocalAuth: true`를 강제합니다.
+이 템플릿을 적용하지 않습니다. 템플릿은 기본적으로 `disableLocalAuth: true`를 사용합니다.
 
 ```powershell
 ./infra/deploy-foundry.ps1 -Mode Check
@@ -289,6 +303,29 @@ Foundry 스크립트에는 DB 비밀번호 입력, IP 조회, DB 등록 검사, 
 구독 배포 이름은 `horizonship-foundry`이며 DB 배포 이름과 다릅니다.
 성공하면 Foundry 이름, OpenAI endpoint, 두 모델의 deployment 이름을 출력하며 key는 조회하거나 출력하지 않습니다.
 
+전용 KRC 환경에서 quota가 남은 대체 모델을 선택하는 예입니다.
+먼저 `Check`로 지원 버전과 quota를 확인한 뒤 `WhatIf`, `Deploy`를 각각 실행합니다.
+
+```powershell
+$modelParameters = @{
+    ResourceGroupName = 'rg-horizon-ship-krc'
+    ChatModelName = 'gpt-5.4-mini'
+    ChatModelVersion = '2026-03-17'
+}
+./infra/deploy-foundry.ps1 -Mode Check @modelParameters
+./infra/deploy-foundry.ps1 -Mode WhatIf @modelParameters
+./infra/deploy-foundry.ps1 -Mode Deploy @modelParameters
+```
+
+앱은 별도 azd 환경으로 설정합니다. `configure.ps1`에 `-EnvironmentName krc`,
+`-HorizonDbMode create`, `-ResourceGroupName rg-horizon-ship-krc`,
+`-ChatDeployment <external-chat-deployment>`와 key 인증을 허용하는 외부 리소스의 endpoint를 전달합니다.
+기본 key 모드는 subscription key를 보안 입력으로 받습니다. 현재 구독의 Foundry는 정책상 key 인증을
+허용하지 않으므로 해당 리소스의 key를 사용한다고 가정하지 않습니다.
+실험용 Entra 모드는 `-OpenAiAuthentication entra`와 `-OpenAiAccountName`으로 선택할 수 있지만,
+현재 검증한 DB 버전에서는 BYOM 등록이 실패하므로 사용하지 않습니다.
+기존 azd 환경의 리전이나 DB 이름을 그대로 변경하면 다른 리소스를 참조할 수 있으므로 재사용하지 않습니다.
+
 호출자 권한은 기본으로 할당하지 않습니다. 백엔드 사용자의 object ID를 지정하면 부모 Foundry 범위에
 `Cognitive Services OpenAI User`를 함께 할당할 수 있습니다. 예를 들어 로컬 로그인 사용자를 호출자로 지정합니다.
 
@@ -300,11 +337,15 @@ $callerObjectId = az ad signed-in-user show --query id --output tsv
 
 백엔드의 Managed Identity 또는 서비스 주체에는 해당 object ID와 `-ModelCallerPrincipalType ServicePrincipal`을
 지정합니다. application/client ID가 아닙니다. RBAC를 생략하면 관리자가 호출 권한을 별도로 준비해야 합니다.
-새 Foundry는 API key를 비운 backend 호출에 사용할 수 있습니다. 다만 `disableLocalAuth: true`이므로
-현재 `azure_ai 2.2.2`의 BYOM pipeline에는 등록할 수 없습니다. DB pipeline을 함께 사용하려면
-key 인증을 허용하는 기존 Foundry를 별도로 준비해야 합니다.
+Entra ID 전용 Foundry는 API key를 비운 backend 호출에 사용할 수 있습니다.
+2026-10-28의 KRC `azure_ai 2.5.3` 검증에서도 BYOM의 Managed Identity 등록이 지원되지 않았습니다.
+현재 [공식 AI 함수 문서](https://learn.microsoft.com/azure/horizondb/ai/ai-functions#register-a-model)는
+`managed-identity` 인증을 명시하지만, 실제 DB는
+`Managed identity authentication is not yet supported for BYOM models` 오류를 반환했습니다.
+문서만으로 런타임 지원을 확정하지 않으며, 지원되지 않을 때 key 인증으로 자동 전환하지 않습니다.
 
-`-ModelSku`, `-ChatCapacity`, `-EmbeddingCapacity`는 Foundry 스크립트에서만 받습니다.
+`-ModelSku`, `-ChatModelName`, `-ChatModelVersion`, `-ChatCapacity`, `-EmbeddingCapacity`는
+Foundry 스크립트에서만 받습니다.
 사전 quota 검사는 요청한 전체 capacity만큼 미할당 quota가 있어야 통과하는 보수적인 방식입니다.
 기존 deployment의 할당량을 차감하지 않으므로 갱신 시 추가 quota가 필요 없어도 중단될 수 있습니다.
 
@@ -338,7 +379,7 @@ az deployment group what-if `
 	--name horizonship-foundry-project `
 	--mode Incremental `
 	--template-file infra/foundry-project.bicep `
-	--parameters 'foundryName=<foundry-resource-name>' projectName=horizonship location=westus3
+	--parameters 'foundryName=<foundry-resource-name>' projectName=horizonship location=koreacentral
 ```
 
 2026-09-10의 샘플 환경에서 같은 템플릿의 what-if가 성공했습니다. 결과는 `1 to create, 3 to ignore`이며,
@@ -354,7 +395,7 @@ az deployment group create `
 	--name horizonship-foundry-project `
 	--mode Incremental `
 	--template-file infra/foundry-project.bicep `
-	--parameters 'foundryName=<foundry-resource-name>' projectName=horizonship location=westus3 `
+	--parameters 'foundryName=<foundry-resource-name>' projectName=horizonship location=koreacentral `
 	--query properties.outputs --output json
 ```
 
@@ -378,14 +419,17 @@ Project는 부모 Foundry의 기존 모델 deployment를 공유합니다. 백엔
 | `AZURE_PG_USER` | 출력의 `databaseUser` |
 | `AZURE_PG_PASSWORD` | 배포 시 입력한 비밀번호 |
 | `AZURE_OPENAI_ENDPOINT` | 출력의 `openAiEndpoint` |
-| `AZURE_OPENAI_KEY` | key 인증을 허용하는 외부 리소스의 subscription key. DB pipeline 구성에 필수입니다. |
-| `AZURE_OPENAI_DEPLOYMENT` | `gpt-5.4` |
+| `AZURE_OPENAI_KEY` | key 모드에서만 필요한 subscription key. Entra 모드에서는 배포하지 않습니다. |
+| `AZURE_OPENAI_AUTH_MODE` | `key` 또는 `entra`. 기본값은 기존 호환성을 위한 `key` |
+| `AZURE_OPENAI_ACCOUNT_NAME` | Entra 모드에서 모델 호출 권한을 부여할 같은 그룹의 AI account |
+| `AZURE_OPENAI_DEPLOYMENT` | 기본값 `gpt-5.4`. 실제 KRC 배포 예는 `gpt-5.4-mini` |
 | `AZURE_EMBED_DEPLOYMENT` | `text-embedding-3-small` |
 
 기존 설정 파일을 덮어쓰지 말고 필요한 값만 수정합니다. 키를 채팅이나 Git에 넣지 마세요.
 스크립트는 기존 로컬 설정 파일을 변경하지 않습니다.
 
-key가 있으면 backend 호출과 DB pipeline 모두 key 인증을 사용합니다. 인증 실패 시 다른 방식으로 자동 전환하지 않습니다.
+key 모드는 backend 호출과 DB pipeline 모두 key 인증을 사용합니다. Entra 모드는 backend에 key를
+전달하지 않고, 앱과 DB의 Managed Identity를 사용합니다. 인증 실패 시 다른 방식으로 자동 전환하지 않습니다.
 setup은 key를 DB model registry에 저장하므로 DB와 백업의 접근 권한을 비밀정보 관리 기준에 맞춰 제한해야 합니다.
 key를 setup 출력, 채팅, Git에 넣지 마세요.
 DB 사용자 이름과 비밀번호는 그대로 필요하며, 키 인증을 다시 허용하도록 Azure 정책을 바꾸지는 않습니다.
@@ -412,7 +456,7 @@ Bicep은 `azure.extensions` 허용 목록과 parameter group 연결까지만 처
 페이지 처리, Provider 등록과 반복 실행, quota 부족, 방화벽 입력,
 what-if 실패, 배포 취소, 환경 변수 복원과 DB·Foundry 배포 범위 분리를 검사합니다. 실제 리소스를 생성하지 않습니다.
 `-CompileTemplates`는 로컬 Azure CLI와 Bicep이 필요합니다. 가짜 설정으로 두 parameter 파일을 컴파일하고
-ARM 템플릿의 리소스 분리·모델 개수·key 인증 차단을 검사합니다. Azure 리소스 작업이나 로그인은 실행하지 않습니다.
+ARM 템플릿의 리소스 분리·모델 선택·key 인증 차단·Entra 모드·KRC 제한을 검사합니다. Azure 리소스 작업이나 로그인은 실행하지 않습니다.
 
 HorizonDB의 `2026-05-01-preview` 타입이 로컬 Bicep 타입 카탈로그에 없으면 `BCP081` 경고가 발생합니다.
 공식 REST 규격을 기준으로 작성했으며 경고를 숨기지 않습니다. 컴파일은 가능하지만 HorizonDB 속성은

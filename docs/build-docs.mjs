@@ -16,7 +16,7 @@ const { unified } = await load('unified')
 const { default: remarkParse } = await load('remark-parse')
 const parser = unified().use(remarkParse).use(remarkGfm)
 const checking = process.argv.includes('--check')
-const outputs = new Set(['blog-post.html', 'fleet-intelligence-slides.html'])
+const outputs = new Set(['blog-post.html', 'fleet-intelligence-slides.html', 'index.html', 'home-shopping.html', 'THIRD-PARTY-NOTICES.html'])
 
 const read = async name => (await readFile(resolve(directory, name), 'utf8')).replace(/\r\n/g, '\n')
 const text = node => node.value ?? node.children?.map(text).join('') ?? ''
@@ -124,11 +124,6 @@ const slidesDocument = createSlidesDocument({
   baseCss: await read('slides-base.css'),
 })
 
-const articleSource = await read('blog-post.md')
-const articleHeadings = parser.parse(articleSource).children.filter(node => node.type === 'heading' && node.depth === 2)
-let headingIndex = 0
-const article = render(articleSource, { h2: ({ children }) => React.createElement('h2', { id: `section-${++headingIndex}` }, children) })
-const toc = articleHeadings.map((node, index) => `<a href="#section-${index + 1}">${escape(text(node))}</a>`).join('')
 const articleCss = `
 header{position:sticky;top:0;z-index:2;padding:14px 28px;display:flex;justify-content:space-between;gap:20px}.progress{position:fixed;top:0;left:0;height:3px;background:var(--cp-accent);width:0;z-index:3}.layout{display:grid;grid-template-columns:250px minmax(0,1fr);max-width:1360px;margin:auto}.toc{position:sticky;top:65px;height:calc(100dvh - 85px);overflow:auto;padding:30px 18px;border-right:1px solid var(--cp-border)}.toc a{display:block;padding:8px 12px;margin-bottom:3px;font-size:14px;line-height:1.5;text-decoration:none;color:var(--cp-text-muted);border-left:2px solid var(--cp-border)}.toc a[aria-current=true]{color:var(--cp-accent);background:var(--cp-accent-soft);border-color:var(--cp-accent);font-weight:650}article{min-width:0;max-width:960px;padding:52px 44px 80px}article>p{max-width:70ch}article h2{scroll-margin-top:90px}.article-footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--cp-border)}
 @media(max-width:900px){.layout{display:block}.toc{position:static;height:auto;max-height:240px;border-bottom:1px solid var(--cp-border);border-right:0;padding:18px}.toc a{padding:7px 10px}article{padding:32px 22px}header{padding:12px 18px;flex-wrap:wrap;font-size:14px}}
@@ -140,8 +135,22 @@ const links=Array.from(document.querySelectorAll('.toc a'));
 function update(){const active=headings.filter(heading=>heading.getBoundingClientRect().top<=140).at(-1)||headings[0];for(const link of links){if(link.hash==='#'+active.id)link.setAttribute('aria-current','true');else link.removeAttribute('aria-current');}const range=document.documentElement.scrollHeight-innerHeight;document.querySelector('.progress').style.width=(range>0?scrollY/range*100:0)+'%';}
 addEventListener('scroll',update,{passive:true});addEventListener('resize',update);update();
 `
-const articleDocument = document('Fleet Intelligence | HorizonDB 기술 설명', articleCss,
-  `<div class="progress" aria-hidden="true"></div><header><a class="brand" href="fleet-intelligence-slides.html">Fleet Intelligence</a><span class="meta">한국어 기술 설명 · 2026-09-16</span></header><div class="layout"><nav class="toc" aria-label="문서 목차">${toc}</nav><article>${article}<p class="article-footer meta">HorizonShip · Powered by HorizonDB</p></article></div>`, articleScript)
+export function renderArticleDocument(source, { title, brand, href, meta = '한국어 기술 설명 · 검증일은 본문 참고' }) {
+  const articleHeadings = parser.parse(source).children.filter(node => node.type === 'heading' && node.depth === 2)
+  let headingIndex = 0
+  const article = render(source, { h2: ({ children }) => React.createElement('h2', { id: `section-${++headingIndex}` }, children) })
+  const toc = articleHeadings.map((node, index) => `<a href="#section-${index + 1}">${escape(text(node))}</a>`).join('')
+  return document(title, articleCss,
+    `<div class="progress" aria-hidden="true"></div><header><a class="brand" href="${escape(href)}">${escape(brand)}</a><span class="meta">${escape(meta)}</span></header><div class="layout"><nav class="toc" aria-label="문서 목차">${toc}</nav><article>${article}<p class="article-footer meta">HorizonDB Use Cases · ${escape(brand)}</p></article></div>`, articleScript)
+}
+
+export { document as renderDocument, escape }
+
+const articleDocument = renderArticleDocument(await read('blog-post.md'), {
+  title: 'Fleet Intelligence | HorizonDB 기술 설명',
+  brand: 'Fleet Intelligence',
+  href: 'fleet-intelligence-slides.html',
+})
 
 for (const [name, content] of [['fleet-intelligence-slides.html', slidesDocument], ['blog-post.html', articleDocument]]) {
   if (checking) assert.equal(await read(name), content, `${name} is stale; run node docs/build-docs.mjs`)

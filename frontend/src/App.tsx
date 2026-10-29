@@ -7,10 +7,13 @@ import {
 import {
   Bot,
   Boxes,
+  ChartNoAxesCombined,
   Database,
+  LayoutGrid,
   Map as MapIcon,
   PackageSearch,
   Radio,
+  Workflow,
 } from 'lucide-react'
 import {
   getCapabilities,
@@ -24,6 +27,10 @@ import { DemoDataPanel } from './components/DemoDataPanel'
 import { ShipmentDetail } from './components/ShipmentDetail'
 import { ShipmentList } from './components/ShipmentList'
 import { ShipmentMap } from './components/ShipmentMap'
+import { UseCaseOverview } from './components/UseCaseOverview'
+import { CommerceDashboard } from './commerce/CommerceDashboard'
+import { USE_CASES } from './useCases'
+import type { UseCaseId } from './useCases'
 import type {
   DatabaseCapabilities,
   CriteriaSearchRequest,
@@ -38,6 +45,7 @@ import type {
 import './App.css'
 
 type MobileView = 'shipments' | 'map' | 'assistant'
+type DemoView = 'overview' | UseCaseId
 
 const DEFAULT_CRITERIA: CriteriaSearchRequest = {
   query: '', status: null, eta_date: null, eta_days: 3, search_center: null,
@@ -45,6 +53,11 @@ const DEFAULT_CRITERIA: CriteriaSearchRequest = {
 }
 
 function App() {
+  const [domain, setDomain] = useState<DemoView>('overview')
+  const [fleetVisited, setFleetVisited] = useState(false)
+  const [commerceVisited, setCommerceVisited] = useState(false)
+  const caseNavigation = useRef<HTMLSelectElement | null>(null)
+  const activeUseCase = USE_CASES.find(useCase => useCase.id === domain)
   const [shipments, setShipments] = useState<Shipment[]>([])
   const [semanticResults, setSemanticResults] = useState<Shipment[] | null>(null)
   const [stats, setStats] = useState<ShipmentStats | null>(null)
@@ -72,6 +85,19 @@ function App() {
     query: string
   } | null>(null)
   useEffect(() => () => criteriaAbort.current?.abort(), [])
+
+  useEffect(() => {
+    document.title = activeUseCase
+      ? `${activeUseCase.title} | HorizonDB Use Cases`
+      : 'HorizonDB Use Cases'
+  }, [activeUseCase])
+
+  function navigate(next: DemoView) {
+    setDomain(next)
+    if (next === 'fleet') setFleetVisited(true)
+    if (next === 'commerce') setCommerceVisited(true)
+    caseNavigation.current?.focus()
+  }
 
   function cancelCriteria() {
     criteriaAbort.current?.abort()
@@ -153,6 +179,7 @@ function App() {
   }
 
   useEffect(() => {
+    if (!fleetVisited) return
     let cancelled = false
     Promise.all([getShipments(), getShipmentStats(), getCapabilities()])
       .then(([nextShipments, nextStats, nextCapabilities]) => {
@@ -178,7 +205,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [fleetVisited])
 
   const visibleShipments = semanticResults ?? shipments
 
@@ -301,19 +328,19 @@ function App() {
     stats?.statuses.find((item) => item.status === shipmentStatus)?.count ?? 0
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-view={domain}>
       <header className="app-header">
         <div className="brand-lockup">
           <span className="brand-mark" aria-hidden="true">
             <Boxes size={20} />
           </span>
           <div>
-            <strong>Fleet Intelligence</strong>
-            <span>Powered by HorizonDB</span>
+            <strong>HorizonDB Use Cases</strong>
+            <span>{activeUseCase?.title ?? 'PostgreSQL extensions & AI in practice'}</span>
           </div>
         </div>
 
-        <div className="capability-strip" aria-label="Platform capabilities">
+        <div className="capability-strip" aria-label="Platform capabilities" hidden={domain !== 'fleet'}>
           <span className={capabilities?.connected ? 'available' : 'standby'}>
             <Database size={14} />
             {capabilities?.connected ? 'HorizonDB live' : 'HorizonDB'}
@@ -332,15 +359,48 @@ function App() {
           </span>
         </div>
 
+        <div className="capability-strip commerce-capabilities" aria-label="Home shopping technologies" hidden={domain !== 'commerce'}>
+          <span title="주문·댓글·분석 결과·방송 대응 기록을 같은 HorizonDB에 저장합니다.">
+            <Database size={14} />
+            HorizonDB
+          </span>
+          <span title="주문·결제액·감정 비율을 SQL로 집계하고 화면을 2초 간격으로 갱신합니다.">
+            <ChartNoAxesCombined size={14} />
+            SQL Aggregation
+          </span>
+          <span title="Preview: 5초 경과 또는 10건 도달 시 묶은 댓글을 변경 기반 DB pipeline으로 분석합니다. LLM 추론은 연결된 외부 모델에서 수행합니다.">
+            <Workflow size={14} />
+            AI Pipelines
+          </span>
+        </div>
+
         <div className="network-state">
-          <Radio size={15} aria-hidden="true" />
+          {domain === 'fleet' && <><Radio size={15} aria-hidden="true" />
           <span>
             <strong>{stats?.total ?? shipments.length}</strong>
             tracked
-          </span>
+          </span></>}
+          {domain !== 'overview' && (
+            <button type="button" className="case-home-button" onClick={() => navigate('overview')} aria-label="전체 사례로 돌아가기">
+              <LayoutGrid size={16} aria-hidden="true" />
+              전체 사례
+            </button>
+          )}
+          <label className="domain-selector">
+            <span>활용 사례</span>
+            <select ref={caseNavigation} aria-label="활용 사례 선택" value={domain} onChange={event => {
+              const next = event.currentTarget.value
+              if (next === 'overview' || next === 'fleet' || next === 'commerce') navigate(next)
+            }}>
+              <option value="overview">전체 사례</option>
+              {USE_CASES.map(useCase => <option key={useCase.id} value={useCase.id}>{useCase.title}</option>)}
+            </select>
+          </label>
         </div>
       </header>
 
+      {domain === 'overview' && <UseCaseOverview onSelect={navigate} />}
+      {fleetVisited && <div className="fleet-domain" hidden={domain !== 'fleet'}>
       {error ? (
         <div className="load-error" role="alert">
           <span>{error}</span>
@@ -466,6 +526,8 @@ function App() {
           AI 도우미
         </button>
       </nav>
+      </div>}
+      {commerceVisited && <CommerceDashboard active={domain === 'commerce'} />}
     </div>
   )
 }

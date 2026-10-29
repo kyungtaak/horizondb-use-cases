@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "test:commerce": "node --experimental-strip-types --test src/commerce/timeline.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

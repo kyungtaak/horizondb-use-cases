@@ -4,7 +4,7 @@ targetScope = 'resourceGroup'
 param foundryName string
 
 @description('Must match the location of the existing Foundry account.')
-param location string = 'westus3'
+param location string = 'koreacentral'
 
 @minLength(2)
 @maxLength(64)
